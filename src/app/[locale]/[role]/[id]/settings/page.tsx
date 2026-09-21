@@ -1,11 +1,12 @@
 "use client";
 import { RealtimeLoading } from "@/components/realtime-loading/RealtimeLoading";
 import React from "react";
-import { Sun, Moon, Bell } from "lucide-react";
+import { Sun, Moon, Bell, Ear, EarOff } from "lucide-react";
 import { useRole } from "@/context/RoleContext";
 import { useTheme } from "next-themes";
 import { useChangeLocale, useCurrentLocale, useI18n } from "@/components/translate/client";
 import { Topbar } from "@/components/layout/Topbar";
+import { useLibraVoiceContext } from "@/context/LibraVoiceContext";
 
 export default function SettingsPage() {
   const { role, toggleRole, isKidsMode } = useRole();
@@ -13,6 +14,7 @@ export default function SettingsPage() {
   const changeLocale = useChangeLocale();
   const currentLocale = useCurrentLocale();
   const t = useI18n();
+  const { wakeWordEnabled, setWakeWordEnabled, wakeWordSupported, wakeWordDenied } = useLibraVoiceContext();
 
   const ui = isKidsMode
     ? { page: "bg-kids-cream", panel: "bg-kids-sun shadow-amber-300/40", control: "bg-white/90 text-kids-ink", active: "bg-kids-coral text-white" }
@@ -54,6 +56,30 @@ export default function SettingsPage() {
         <button onClick={toggleRole} className={`w-full rounded-xl px-4 py-3 text-sm font-bold transition-all hover:brightness-95 ${ui.control}`}>
           {role === "teacher" ? t("roles.teacher") : t("roles.student")}
         </button>
+      ),
+    },
+    {
+      title: t("settings.heyLibra"),
+      desc: !wakeWordSupported
+        ? t("settings.heyLibraUnsupported")
+        : wakeWordDenied
+        ? t("settings.heyLibraDenied")
+        : t("settings.heyLibraDesc"),
+      control: (
+        <div className={`flex w-full rounded-xl p-1 ${ui.control} ${!wakeWordSupported ? "opacity-50" : ""}`}>
+          {([true, false] as const).map((on) => (
+            <button
+              key={String(on)}
+              onClick={() => setWakeWordEnabled(on)}
+              disabled={!wakeWordSupported}
+              aria-pressed={wakeWordEnabled === on}
+              className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold transition-all disabled:cursor-not-allowed ${wakeWordEnabled === on ? `${ui.active} shadow-sm` : "opacity-70 hover:opacity-100"}`}
+            >
+              {on ? <Ear className="h-4 w-4" /> : <EarOff className="h-4 w-4" />}
+              {on ? t("settings.heyLibraOn") : t("settings.heyLibraOff")}
+            </button>
+          ))}
+        </div>
       ),
     },
     {

@@ -538,6 +538,12 @@ export default {
     roleDesc: "Beralih antara mode pengajar dan pelajar",
     notifications: "Notifikasi",
     notificationsDesc: "Kelola preferensi notifikasi",
+    heyLibra: "Hey Libra",
+    heyLibraDesc: "Panggil LibraAI dengan suara tanpa klik mic di Dashboard, Tugas Saya, Kelas Saya, Tugas, Jadwal, LibraAI, dan Meetings",
+    heyLibraOn: "Aktif",
+    heyLibraOff: "Nonaktif",
+    heyLibraUnsupported: "Browser ini belum mendukung. Gunakan Chrome, Edge, atau Safari.",
+    heyLibraDenied: "Akses mikrofon ditolak. Izinkan mikrofon di pengaturan browser.",
   },
 
   help: {
@@ -760,6 +766,9 @@ export default {
     micOn: "Mic Nyala",
     micOff: "Mic Mati",
     end: "Akhiri Percakapan",
+    wakeHint: "Ucapkan \"Hey Libra\" kapan saja untuk memanggil LibraAI",
+    wakeDetected: "LibraAI siap mendengarkan!",
+    you: "Anda",
     kids: {
       connecting: "Tunggu sebentar ya... 🔄",
       listening: "Aku mendengarkan... 👂",
@@ -769,6 +778,9 @@ export default {
       listeningHint: "Bicara sekarang, aku siap mendengarmu!",
       speakingHint: "Dengarkan jawaban LibraAI ya!",
       end: "Berhenti Ngobrol",
+      wakeHint: "Panggil aku \"Hey Libra\" kapan saja ya!",
+      wakeDetected: "Iya, aku di sini! 👋",
+      you: "Kamu",
     },
     errors: {
       connectionLost: "Koneksi terputus. Silakan coba lagi.",

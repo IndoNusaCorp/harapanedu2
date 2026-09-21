@@ -6,6 +6,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { KidsSidebar } from "@/components/kids/KidsSidebar";
 import { useRole } from "@/context/RoleContext";
 import { NotificationProvider } from "@/context/NotificationContext";
+import { LibraVoiceProvider } from "@/context/LibraVoiceContext";
 import { connecttoauth, connecttofirestore } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
@@ -76,12 +77,15 @@ export default function RoleLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <NotificationProvider uid={id} basePath={basePath}>
-      <div className="relative z-10 flex h-full w-full">
-        {isKidsMode ? <KidsSidebar basePath={basePath} /> : <Sidebar basePath={basePath} />}
-        <main className={`relative flex min-w-0 flex-1 flex-col overflow-y-auto ${isKidsMode ? "bg-kids-cream" : "bg-[#F1F5FF] dark:bg-edu-navy"}`}>
-          {children}
-        </main>
-      </div>
+      {/* Voice LibraAI global: "Hey Libra" bisa dipanggil dari beberapa halaman dan tetap jalan saat pindah halaman */}
+      <LibraVoiceProvider basePath={basePath}>
+        <div className="relative z-10 flex h-full w-full">
+          {isKidsMode ? <KidsSidebar basePath={basePath} /> : <Sidebar basePath={basePath} />}
+          <main className={`relative flex min-w-0 flex-1 flex-col overflow-y-auto ${isKidsMode ? "bg-kids-cream" : "bg-[#F1F5FF] dark:bg-edu-navy"}`}>
+            {children}
+          </main>
+        </div>
+      </LibraVoiceProvider>
     </NotificationProvider>
   );
 }

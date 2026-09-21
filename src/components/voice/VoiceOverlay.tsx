@@ -13,7 +13,13 @@ interface VoiceOverlayProps {
   isMuted?: boolean;
   onToggleMute?: () => void;
   variant?: "default" | "kids";
+  userTranscript?: string;
+  aiTranscript?: string;
+  wakeDetected?: boolean;
 }
+
+// Tinggi tetap agar bar tidak "loncat" setiap render (sebelumnya Math.random di render)
+const WAVE_HEIGHTS = [10, 18, 24, 16, 12];
 
 export default function VoiceOverlay({
   status,
@@ -22,6 +28,9 @@ export default function VoiceOverlay({
   isMuted = false,
   onToggleMute,
   variant = "default",
+  userTranscript = "",
+  aiTranscript = "",
+  wakeDetected = false,
 }: VoiceOverlayProps) {
   const t = useI18n();
   if (status === "idle") return null;
@@ -102,9 +111,19 @@ export default function VoiceOverlay({
           )}
 
           {/* Main circle */}
+          {/* Ring saat "Hey Libra" terdeteksi */}
+          {wakeDetected && (
+            <div
+              className={`absolute w-36 h-36 sm:w-40 sm:h-40 rounded-full border-4 ${
+                isKids ? "border-yellow-300" : "border-sky-300"
+              } animate-ping`}
+              style={{ animationDuration: "1s" }}
+            />
+          )}
+
           <div
-            className={`relative w-28 h-28 sm:w-32 sm:h-32 rounded-full ${config.iconBg} flex items-center justify-center text-white shadow-2xl ${
-              status === "listening" ? "animate-pulse" : ""
+            className={`relative w-28 h-28 sm:w-32 sm:h-32 rounded-full ${config.iconBg} flex items-center justify-center text-white shadow-2xl transition-transform duration-300 ${
+              wakeDetected ? "scale-110" : status === "listening" ? "animate-pulse" : ""
             }`}
             style={{
               boxShadow: `0 0 60px ${
@@ -129,12 +148,12 @@ export default function VoiceOverlay({
             {/* Soundwave bars for AI speaking */}
             {status === "ai-speaking" && (
               <div className="absolute -bottom-2 flex items-end gap-1">
-                {[...Array(5)].map((_, i) => (
+                {WAVE_HEIGHTS.map((height, i) => (
                   <div
                     key={i}
                     className="w-1 bg-white/80 rounded-full animate-bounce"
                     style={{
-                      height: `${8 + Math.random() * 16}px`,
+                      height: `${height}px`,
                       animationDelay: `${i * 100}ms`,
                       animationDuration: "0.6s",
                     }}
@@ -146,9 +165,11 @@ export default function VoiceOverlay({
         </div>
 
         {/* Status text */}
-        <div className="text-center space-y-2">
+        <div className="text-center space-y-2" aria-live="polite">
           <p className="text-lg sm:text-xl font-bold text-white">
-            {config.label}
+            {wakeDetected
+              ? isKids ? t("voice.kids.wakeDetected") : t("voice.wakeDetected")
+              : config.label}
           </p>
           {config.hint && (
             <p className={`text-sm ${hintColor}`}>
@@ -156,6 +177,39 @@ export default function VoiceOverlay({
             </p>
           )}
         </div>
+
+        {/* Live transcript */}
+        {status !== "error" && (userTranscript || aiTranscript) && (
+          <div
+            className={`w-full max-h-40 overflow-y-auto rounded-2xl px-4 py-3 space-y-2 text-sm ${
+              isKids ? "bg-white/15" : "bg-white/5 border border-white/10"
+            }`}
+          >
+            {userTranscript && (
+              <p className="text-white/70">
+                <span className="font-semibold text-white">
+                  {isKids ? t("voice.kids.you") : t("voice.you")}:
+                </span>{" "}
+                {userTranscript.trim()}
+              </p>
+            )}
+            {aiTranscript && (
+              <p className="text-white">
+                <span className={`font-semibold ${isKids ? "text-yellow-200" : "text-sky-300"}`}>
+                  LibraAI:
+                </span>{" "}
+                {aiTranscript.trim()}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Wake phrase hint */}
+        {(status === "listening" || status === "ai-speaking") && !isMuted && (
+          <p className={`text-xs text-center ${isKids ? "text-orange-100/80" : "text-slate-400"}`}>
+            {isKids ? t("voice.kids.wakeHint") : t("voice.wakeHint")}
+          </p>
+        )}
 
         {/* Buttons */}
         <div className="flex items-center gap-3">

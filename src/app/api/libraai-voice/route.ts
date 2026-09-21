@@ -59,8 +59,19 @@ export async function POST(request: NextRequest) {
             }
         }
 
+        // Wake phrase: audio dikirim langsung dari browser ke Gemini Live, jadi server
+        // tidak bisa mendeteksi ucapan user. Deteksi diserahkan ke model lewat systemInstruction.
+        const callinglibra = "Hey Libra";
+        const GreetingLibra =
+            role === "teacher"
+                ? "Iya, Bapak/Ibu? Ada yang bisa saya bantu?"
+                : "Iya, saya di sini! Ada yang bisa saya bantu?";
+
         const systemInstruction = `
         Kamu adalah LibraAI, Teman AI Akademik untuk Sekolah Dian Harapan, Kamu adalah LibraAI v3.1.
+        - PANGGILAN: Jika pengguna memanggil "${callinglibra}" (atau variasinya seperti "Hai Libra", "Halo Libra", "Libra"), SELALU dan SEGERA merespon, walaupun sebelumnya sedang membahas topik lain.
+          - Jika panggilan itu tidak diikuti pertanyaan, jawab singkat dengan: "${GreetingLibra}"
+          - Jika panggilan itu diikuti pertanyaan (misal "Hey Libra, tugas saya apa saja?"), langsung jawab pertanyaannya tanpa sapaan panjang.
         - Fokus utama: Materi Sekolah, Pelajaran, Ringkasan Materi, dan menjawab pertanyaan seputar jadwal, kelas, tugas, serta nilai pengguna.
         - Bahasa: SELALU jawab dalam Bahasa Indonesia.
         - PENTING: Kamu sedang berkomunikasi melalui SUARA (voice chat). Jawab dengan kalimat natural seperti percakapan, jangan gunakan Markdown, bullet points, atau format teks.

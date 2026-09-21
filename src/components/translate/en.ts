@@ -537,6 +537,12 @@ export default {
     roleDesc: "Switch between teacher and student mode",
     notifications: "Notifications",
     notificationsDesc: "Manage notification preferences",
+    heyLibra: "Hey Libra",
+    heyLibraDesc: "Call LibraAI by voice without clicking the mic on Dashboard, My Work, My Classes, Assignments, Schedule, LibraAI, and Meetings",
+    heyLibraOn: "On",
+    heyLibraOff: "Off",
+    heyLibraUnsupported: "This browser isn't supported yet. Use Chrome, Edge, or Safari.",
+    heyLibraDenied: "Microphone access denied. Allow the microphone in your browser settings.",
   },
 
   help: {
@@ -759,6 +765,9 @@ export default {
     micOn: "Mic On",
     micOff: "Mic Off",
     end: "End Conversation",
+    wakeHint: "Say \"Hey Libra\" anytime to call LibraAI",
+    wakeDetected: "LibraAI is listening!",
+    you: "You",
     kids: {
       connecting: "Hold on a moment... 🔄",
       listening: "I'm listening... 👂",
@@ -768,6 +777,9 @@ export default {
       listeningHint: "Talk now, I'm ready to listen!",
       speakingHint: "Listen to LibraAI's answer!",
       end: "Stop Chatting",
+      wakeHint: "Call me \"Hey Libra\" anytime!",
+      wakeDetected: "Yes, I'm here! 👋",
+      you: "You",
     },
     errors: {
       connectionLost: "Connection lost. Please try again.",

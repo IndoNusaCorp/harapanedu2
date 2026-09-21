@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { useI18n } from "@/components/translate/client";
 import { aiFetch } from "@/lib/ai/client";
+import { WAKE_PHRASE_REGEX } from "@/hooks/useWakeWord";
 
 type VoiceStatus = "idle" | "connecting" | "listening" | "ai-speaking" | "error";
 
@@ -17,11 +18,33 @@ interface UseLibraVoiceOptions {
 interface UseLibraVoiceReturn {
   status: VoiceStatus;
   error: string | null;
-  startVoiceChat: () => Promise<void>;
+  /** initialText: kalimat yang sudah diucapkan user (dari wake word), dikirim sebagai giliran pertama */
+  startVoiceChat: (initialText?: string) => Promise<void>;
   stopVoiceChat: () => void;
   isActive: boolean;
   isMuted: boolean;
   toggleMute: () => void;
+  /** Transkrip ucapan user pada giliran saat ini */
+  userTranscript: string;
+  /** Transkrip jawaban LibraAI pada giliran saat ini */
+  aiTranscript: string;
+  /** true sesaat setelah user memanggil "Hey Libra" */
+  wakeDetected: boolean;
+  /** Level suara 0..1 (mic saat mendengarkan, LibraAI saat bicara) — dibaca per frame untuk animasi */
+  getLevel: () => number;
+}
+
+const WAKE_FLASH_MS = 1500;
+
+/** RMS sederhana, dinormalisasi ke 0..1 */
+function rms(samples: ArrayLike<number>, scale: number): number {
+  if (samples.length === 0) return 0;
+  let sum = 0;
+  for (let i = 0; i < samples.length; i++) {
+    const v = samples[i] / scale;
+    sum += v * v;
+  }
+  return Math.min(1, Math.sqrt(sum / samples.length) * 4);
 }
 
 /**
@@ -56,6 +79,15 @@ export function useLibraVoice({
   const [status, setStatus] = useState<VoiceStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState(false);
+  const isMutedRef = useRef(false);
+  isMutedRef.current = isMuted;
+  const [userTranscript, setUserTranscript] = useState("");
+  const [aiTranscript, setAiTranscript] = useState("");
+  const [wakeDetected, setWakeDetected] = useState(false);
+  const wakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Menandai giliran baru, supaya transkrip lama dibersihkan saat user mulai bicara lagi
+  const turnDoneRef = useRef(true);
+  const userTranscriptRef = useRef("");
 
   // Refs to persist across renders
   const sessionRef = useRef<any>(null);
@@ -68,6 +100,13 @@ export function useLibraVoice({
   // Audio playback queue
   const audioQueueRef = useRef<Float32Array[]>([]);
   const isPlayingRef = useRef(false);
+  const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
+
+  // Level audio untuk animasi (ref, supaya tidak memicu re-render tiap chunk)
+  const inputLevelRef = useRef(0);
+  const outputLevelRef = useRef(0);
+  const statusRef = useRef<VoiceStatus>("idle");
+  statusRef.current = status;
 
   /**
    * Play queued audio buffers sequentially
@@ -75,6 +114,7 @@ export function useLibraVoice({
   const playNextAudio = useCallback(() => {
     if (audioQueueRef.current.length === 0) {
       isPlayingRef.current = false;
+      outputLevelRef.current = 0;
       setStatus((prev) => (prev === "ai-speaking" ? "listening" : prev));
       return;
     }
@@ -83,12 +123,16 @@ export function useLibraVoice({
     setStatus("ai-speaking");
 
     const samples = audioQueueRef.current.shift()!;
+    outputLevelRef.current = rms(samples, 1);
 
     if (!playbackContextRef.current || playbackContextRef.current.state === "closed") {
       playbackContextRef.current = new AudioContext({ sampleRate: 24000 });
     }
 
     const ctx = playbackContextRef.current;
+    if (ctx.state === "suspended") {
+      ctx.resume().catch(() => {});
+    }
     const audioBuffer = ctx.createBuffer(1, samples.length, 24000);
     audioBuffer.getChannelData(0).set(samples);
 
@@ -96,9 +140,36 @@ export function useLibraVoice({
     sourceNode.buffer = audioBuffer;
     sourceNode.connect(ctx.destination);
     sourceNode.onended = () => {
+      if (currentSourceRef.current === sourceNode) currentSourceRef.current = null;
       playNextAudio();
     };
+    currentSourceRef.current = sourceNode;
     sourceNode.start();
+  }, []);
+
+  /**
+   * Hentikan audio LibraAI yang sedang diputar (dipakai saat user memotong / memanggil "Hey Libra")
+   */
+  const stopPlayback = useCallback(() => {
+    audioQueueRef.current = [];
+    const current = currentSourceRef.current;
+    currentSourceRef.current = null;
+    if (current) {
+      current.onended = null;
+      try {
+        current.stop();
+      } catch {
+        // Sudah berhenti
+      }
+    }
+    isPlayingRef.current = false;
+    setStatus((prev) => (prev === "ai-speaking" ? "listening" : prev));
+  }, []);
+
+  const flashWake = useCallback(() => {
+    setWakeDetected(true);
+    if (wakeTimerRef.current) clearTimeout(wakeTimerRef.current);
+    wakeTimerRef.current = setTimeout(() => setWakeDetected(false), WAKE_FLASH_MS);
   }, []);
 
   /**
@@ -125,9 +196,15 @@ export function useLibraVoice({
   /**
    * Start the voice chat session
    */
-  const startVoiceChat = useCallback(async () => {
+  const startVoiceChat = useCallback(async (initialText?: string) => {
+    // Bisa dipanggil langsung dari onClick (argumen berupa event), abaikan selain string
+    const firstTurn = typeof initialText === "string" ? initialText.trim() : "";
     try {
       setError(null);
+      setUserTranscript("");
+      setAiTranscript("");
+      turnDoneRef.current = true;
+      userTranscriptRef.current = "";
       setStatus("connecting");
 
       // 1. Request microphone permission
@@ -166,6 +243,8 @@ export function useLibraVoice({
         config: {
           responseModalities: [Modality.AUDIO],
           systemInstruction: systemInstruction,
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: {
@@ -180,18 +259,52 @@ export function useLibraVoice({
             setStatus("listening");
           },
           onmessage: (message: any) => {
+            const content = message.serverContent;
+            if (!content) return;
+
+            // User memotong LibraAI (misal memanggil "Hey Libra" saat LibraAI bicara):
+            // buang sisa audio agar LibraAI langsung mendengarkan
+            if (content.interrupted) {
+              stopPlayback();
+            }
+
+            // Transkrip ucapan user + deteksi wake phrase
+            const inputText: string | undefined = content.inputTranscription?.text;
+            if (inputText) {
+              if (turnDoneRef.current) {
+                turnDoneRef.current = false;
+                userTranscriptRef.current = "";
+                setAiTranscript("");
+              }
+              const prev = userTranscriptRef.current;
+              const next = prev + inputText;
+              userTranscriptRef.current = next;
+              setUserTranscript(next);
+              if (WAKE_PHRASE_REGEX.test(next) && !WAKE_PHRASE_REGEX.test(prev)) {
+                flashWake();
+                stopPlayback();
+              }
+            }
+
+            // Transkrip jawaban LibraAI
+            const outputText: string | undefined = content.outputTranscription?.text;
+            if (outputText) {
+              setAiTranscript((prev) => prev + outputText);
+            }
+
             // Handle audio response from Gemini
-            if (message.serverContent?.modelTurn?.parts) {
-              for (const part of message.serverContent.modelTurn.parts) {
+            if (content.modelTurn?.parts) {
+              for (const part of content.modelTurn.parts) {
                 if (part.inlineData?.data) {
                   const audioBuffer = base64ToArrayBuffer(part.inlineData.data);
                   enqueueAudio(audioBuffer);
                 }
               }
             }
-            // Detect turn completion
-            if (message.serverContent?.turnComplete) {
-              // AI finished speaking; will transition back to listening when audio queue drains
+
+            // AI selesai menjawab; status kembali ke listening saat antrean audio habis
+            if (content.turnComplete) {
+              turnDoneRef.current = true;
             }
           },
           onerror: (e: any) => {
@@ -222,6 +335,7 @@ export function useLibraVoice({
 
       // 5. Stream mic audio to Gemini
       workletNode.port.onmessage = (event: MessageEvent) => {
+        inputLevelRef.current = rms(new Int16Array(event.data), 32768);
         if (sessionRef.current) {
           const base64Audio = arrayBufferToBase64(event.data);
           try {
@@ -241,7 +355,24 @@ export function useLibraVoice({
       source.connect(workletNode);
       workletNode.connect(audioContext.destination); // Required for worklet to run
 
+      // Dimulai tanpa klik (wake word): browser bisa menahan AudioContext dalam keadaan suspended
+      if (audioContext.state === "suspended") {
+        audioContext.resume().catch(() => {});
+      }
+
       setStatus("listening");
+
+      // "Hey Libra" sudah diucapkan sebelum sesi terhubung, jadi teruskan ke Gemini agar langsung dijawab
+      if (firstTurn) {
+        flashWake();
+        userTranscriptRef.current = firstTurn;
+        setUserTranscript(firstTurn);
+        turnDoneRef.current = false;
+        session.sendClientContent({
+          turns: [{ role: "user", parts: [{ text: firstTurn }] }],
+          turnComplete: true,
+        });
+      }
     } catch (err: any) {
       console.error("[LibraVoice] Start error:", err);
 
@@ -257,7 +388,7 @@ export function useLibraVoice({
       // Cleanup on error
       cleanupResources();
     }
-  }, [role, classLevel, enqueueAudio, t]);
+  }, [role, classLevel, enqueueAudio, stopPlayback, flashWake, t]);
 
   /**
    * Cleanup all audio resources
@@ -295,6 +426,12 @@ export function useLibraVoice({
     // Clear audio queue
     audioQueueRef.current = [];
     isPlayingRef.current = false;
+    currentSourceRef.current = null;
+
+    if (wakeTimerRef.current) {
+      clearTimeout(wakeTimerRef.current);
+      wakeTimerRef.current = null;
+    }
   }, []);
 
   /**
@@ -315,6 +452,9 @@ export function useLibraVoice({
     setStatus("idle");
     setError(null);
     setIsMuted(false);
+    setUserTranscript("");
+    setAiTranscript("");
+    setWakeDetected(false);
   }, [cleanupResources]);
 
   /**
@@ -330,6 +470,13 @@ export function useLibraVoice({
       }
     }
   }, [isMuted]);
+
+  const getLevel = useCallback(() => {
+    const current = statusRef.current;
+    if (current === "ai-speaking") return outputLevelRef.current;
+    if (current === "listening" && !isMutedRef.current) return inputLevelRef.current;
+    return 0;
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -353,5 +500,9 @@ export function useLibraVoice({
     isActive: status !== "idle" && status !== "error",
     isMuted,
     toggleMute,
+    userTranscript,
+    aiTranscript,
+    wakeDetected,
+    getLevel,
   };
 }
