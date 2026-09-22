@@ -2,6 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { NextRequest, NextResponse } from "next/server";
 import { verifyRequestUser } from "@/lib/ai/serverAuth";
 import { buildAiData } from "@/lib/ai/dataContext";
+import { voiceToolDeclarations } from "@/lib/ai/voiceTools";
 
 export async function POST(request: NextRequest) {
     try {
@@ -68,7 +69,7 @@ export async function POST(request: NextRequest) {
                 : "Iya, saya di sini! Ada yang bisa saya bantu?";
 
         const systemInstruction = `
-        Kamu adalah LibraAI, Teman AI Akademik untuk Sekolah Dian Harapan, Kamu adalah LibraAI v3.1.
+        Kamu adalah LibraAI Voice, Teman AI Akademik untuk Sekolah Dian Harapan.
         - PANGGILAN: Jika pengguna memanggil "${callinglibra}" (atau variasinya seperti "Hai Libra", "Halo Libra", "Libra"), SELALU dan SEGERA merespon, walaupun sebelumnya sedang membahas topik lain.
           - Jika panggilan itu tidak diikuti pertanyaan, jawab singkat dengan: "${GreetingLibra}"
           - Jika panggilan itu diikuti pertanyaan (misal "Hey Libra, tugas saya apa saja?"), langsung jawab pertanyaannya tanpa sapaan panjang.
@@ -76,6 +77,11 @@ export async function POST(request: NextRequest) {
         - Bahasa: SELALU jawab dalam Bahasa Indonesia.
         - PENTING: Kamu sedang berkomunikasi melalui SUARA (voice chat). Jawab dengan kalimat natural seperti percakapan, jangan gunakan Markdown, bullet points, atau format teks.
         - Jawab dengan ringkas dan jelas, seperti sedang berbicara langsung.
+        - LAYAR: Kamu bisa menampilkan sesuatu di layar pengguna lewat tool.
+          - Jika pengguna minta melihat, membuka, atau mencari file/dokumen/materi, panggil tool "show_documents" (isi "open": true jika ingin langsung dibuka).
+          - Jika pengguna minta melihat nilai${role === "teacher" ? " siswa" : " (nilai pribadinya)"}, panggil tool "show_grades".
+          - Jika pengguna minta menutup tampilan, panggil tool "close_panel".
+          - Setelah tool selesai, jawab singkat berdasarkan hasilnya (misal "Ini dia 3 file materi Matematika" atau rata-rata nilainya). Jangan membacakan seluruh daftar.
         ${toneInstruction}
         - DILARANG KERAS 18+ KONTEN
         - DILARANG KERAS KONTEN POLITIK
@@ -105,6 +111,7 @@ export async function POST(request: NextRequest) {
                 token: token.name,
                 model: "gemini-2.5-flash-native-audio-preview-12-2025",
                 systemInstruction: systemInstruction,
+                tools: [{ functionDeclarations: voiceToolDeclarations(role) }],
             },
         });
     } catch (error) {

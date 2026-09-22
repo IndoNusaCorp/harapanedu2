@@ -3,6 +3,9 @@
 import React from "react";
 import { Mic, MicOff, X, Radio } from "lucide-react";
 import { useI18n } from "@/components/translate/client";
+import VoiceResultPanel from "@/components/voice/VoiceResultPanel";
+import { ORB_PALETTES } from "@/components/voice/LibraOrb";
+import type { VoicePanel } from "@/lib/ai/voiceTools";
 
 type VoiceStatus = "idle" | "connecting" | "listening" | "ai-speaking" | "error";
 
@@ -16,7 +19,13 @@ interface VoiceOverlayProps {
   userTranscript?: string;
   aiTranscript?: string;
   wakeDetected?: boolean;
+  /** Dokumen / nilai yang diminta lewat suara */
+  panel?: VoicePanel | null;
+  onClosePanel?: () => void;
+  onOpenFile?: (id: string | null) => void;
 }
+
+const noop = () => {};
 
 // Tinggi tetap agar bar tidak "loncat" setiap render (sebelumnya Math.random di render)
 const WAVE_HEIGHTS = [10, 18, 24, 16, 12];
@@ -31,11 +40,15 @@ export default function VoiceOverlay({
   userTranscript = "",
   aiTranscript = "",
   wakeDetected = false,
+  panel = null,
+  onClosePanel = noop,
+  onOpenFile = noop,
 }: VoiceOverlayProps) {
   const t = useI18n();
   if (status === "idle") return null;
 
   const isKids = variant === "kids";
+  const hasPanel = !!panel && status !== "error";
 
   const statusConfig = {
     connecting: {
@@ -89,7 +102,11 @@ export default function VoiceOverlay({
       />
 
       {/* Content */}
-      <div className="relative z-10 flex flex-col items-center gap-6 sm:gap-8 p-6 sm:p-8 max-w-sm w-full mx-4">
+      <div
+        className={`relative z-10 flex flex-col items-center w-full mx-4 ${
+          hasPanel ? "gap-4 p-4 max-w-xl max-h-screen overflow-y-auto" : "gap-6 sm:gap-8 p-6 sm:p-8 max-w-sm"
+        }`}
+      >
         {/* Animated Orb */}
         <div className="relative flex items-center justify-center">
           {/* Pulse rings */}
@@ -122,7 +139,7 @@ export default function VoiceOverlay({
           )}
 
           <div
-            className={`relative w-28 h-28 sm:w-32 sm:h-32 rounded-full ${config.iconBg} flex items-center justify-center text-white shadow-2xl transition-transform duration-300 ${
+            className={`relative ${hasPanel ? "w-20 h-20 [&>svg]:w-8 [&>svg]:h-8" : "w-28 h-28 sm:w-32 sm:h-32"} rounded-full ${config.iconBg} flex items-center justify-center text-white shadow-2xl transition-transform duration-300 ${
               wakeDetected ? "scale-110" : status === "listening" ? "animate-pulse" : ""
             }`}
             style={{
@@ -178,10 +195,20 @@ export default function VoiceOverlay({
           )}
         </div>
 
+        {/* Dokumen / nilai yang diminta lewat suara */}
+        {hasPanel && (
+          <VoiceResultPanel
+            panel={panel}
+            palette={isKids ? ORB_PALETTES.kids : ORB_PALETTES.default}
+            onClose={onClosePanel}
+            onOpenFile={onOpenFile}
+          />
+        )}
+
         {/* Live transcript */}
         {status !== "error" && (userTranscript || aiTranscript) && (
           <div
-            className={`w-full max-h-40 overflow-y-auto rounded-2xl px-4 py-3 space-y-2 text-sm ${
+            className={`w-full ${hasPanel ? "max-h-24" : "max-h-40"} overflow-y-auto rounded-2xl px-4 py-3 space-y-2 text-sm ${
               isKids ? "bg-white/15" : "bg-white/5 border border-white/10"
             }`}
           >
@@ -205,7 +232,7 @@ export default function VoiceOverlay({
         )}
 
         {/* Wake phrase hint */}
-        {(status === "listening" || status === "ai-speaking") && !isMuted && (
+        {(status === "listening" || status === "ai-speaking") && !isMuted && !hasPanel && (
           <p className={`text-xs text-center ${isKids ? "text-orange-100/80" : "text-slate-400"}`}>
             {isKids ? t("voice.kids.wakeHint") : t("voice.wakeHint")}
           </p>

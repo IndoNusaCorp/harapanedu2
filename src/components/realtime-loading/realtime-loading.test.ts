@@ -32,7 +32,6 @@ vi.mock('react', async (importOriginal) => {
   return { ...actual, useTransition: () => [state.pending, state.start] };
 });
 
-import * as Mod from './realtime-loading';
 import { useRealtimeLoading } from './realtime-loading';
 
 describe('realtime-loading.ts', () => {
@@ -51,10 +50,6 @@ describe('realtime-loading.ts', () => {
   afterEach(() => {
     log.mockRestore();
     vi.useRealTimers();
-  });
-
-  it('imports without crashing', () => {
-    expect(Mod).toBeDefined();
   });
 
   it('refresh otomatis tiap interval', () => {

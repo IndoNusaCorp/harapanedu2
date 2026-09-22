@@ -5,6 +5,7 @@ import { GoogleGenAI, Modality } from "@google/genai";
 import { useI18n } from "@/components/translate/client";
 import { aiFetch } from "@/lib/ai/client";
 import { WAKE_PHRASE_REGEX } from "@/hooks/useWakeWord";
+import { VOICE_TOOL_NAMES, type VoicePanel, type VoiceToolName } from "@/lib/ai/voiceTools";
 
 type VoiceStatus = "idle" | "connecting" | "listening" | "ai-speaking" | "error";
 
@@ -32,6 +33,19 @@ interface UseLibraVoiceReturn {
   wakeDetected: boolean;
   /** Level suara 0..1 (mic saat mendengarkan, LibraAI saat bicara) — dibaca per frame untuk animasi */
   getLevel: () => number;
+  /** Tampilan hasil tool (dokumen / nilai) yang diminta lewat suara */
+  panel: VoicePanel | null;
+  closePanel: () => void;
+  /** Buka / tutup file di panel dokumen (null = tutup viewer) */
+  openFile: (id: string | null) => void;
+  /** Kirim pertanyaan berupa teks (misal dari chip saran) ke sesi yang sedang berjalan */
+  sendText: (text: string) => void;
+}
+
+interface FunctionCall {
+  id?: string;
+  name?: string;
+  args?: Record<string, unknown>;
 }
 
 const WAKE_FLASH_MS = 1500;
@@ -84,6 +98,7 @@ export function useLibraVoice({
   const [userTranscript, setUserTranscript] = useState("");
   const [aiTranscript, setAiTranscript] = useState("");
   const [wakeDetected, setWakeDetected] = useState(false);
+  const [panel, setPanel] = useState<VoicePanel | null>(null);
   const wakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Menandai giliran baru, supaya transkrip lama dibersihkan saat user mulai bicara lagi
   const turnDoneRef = useRef(true);
@@ -194,6 +209,51 @@ export function useLibraVoice({
   );
 
   /**
+   * Jalankan tool yang diminta Gemini, tampilkan hasilnya, lalu kirim ringkasannya kembali ke model
+   */
+  const handleToolCalls = useCallback(async (calls: FunctionCall[]) => {
+    const session = sessionRef.current;
+    // Abaikan hasil yang datang setelah sesi ditutup
+    const showPanel = (next: VoicePanel) => {
+      if (sessionRef.current === session) setPanel(next);
+    };
+    const responses = await Promise.all(
+      calls.map(async (call) => {
+        const name = call.name as VoiceToolName;
+        const reply = (response: Record<string, unknown>) => ({ id: call.id, name: call.name, response });
+
+        if (!VOICE_TOOL_NAMES.includes(name)) return reply({ error: "Tool tidak dikenal" });
+        if (name === "close_panel") {
+          setPanel(null);
+          return reply({ ok: true });
+        }
+
+        showPanel({ type: "loading", tool: name });
+        try {
+          const res = await aiFetch("/api/libraai-voice/tools", {
+            method: "POST",
+            body: JSON.stringify({ name, args: call.args || {} }),
+          });
+          const json = await res.json();
+          if (!json.success) throw new Error(json.error || "tool");
+          showPanel(json.data.panel);
+          return reply(json.data.result);
+        } catch (err) {
+          console.warn("[LibraVoice] Tool gagal:", name, err);
+          showPanel({ type: "error", tool: name });
+          return reply({ error: "Gagal mengambil data. Minta pengguna mencoba lagi." });
+        }
+      })
+    );
+
+    try {
+      if (sessionRef.current === session) session?.sendToolResponse({ functionResponses: responses });
+    } catch (err) {
+      console.warn("[LibraVoice] Gagal mengirim hasil tool:", err);
+    }
+  }, []);
+
+  /**
    * Start the voice chat session
    */
   const startVoiceChat = useCallback(async (initialText?: string) => {
@@ -203,6 +263,7 @@ export function useLibraVoice({
       setError(null);
       setUserTranscript("");
       setAiTranscript("");
+      setPanel(null);
       turnDoneRef.current = true;
       userTranscriptRef.current = "";
       setStatus("connecting");
@@ -230,7 +291,7 @@ export function useLibraVoice({
         throw new Error(tokenData.error || "token");
       }
 
-      const { token, model, systemInstruction } = tokenData.data;
+      const { token, model, systemInstruction, tools } = tokenData.data;
 
       // 3. Connect to Gemini Live API via SDK
       const ai = new GoogleGenAI({ 
@@ -243,6 +304,7 @@ export function useLibraVoice({
         config: {
           responseModalities: [Modality.AUDIO],
           systemInstruction: systemInstruction,
+          tools,
           inputAudioTranscription: {},
           outputAudioTranscription: {},
           speechConfig: {
@@ -259,6 +321,11 @@ export function useLibraVoice({
             setStatus("listening");
           },
           onmessage: (message: any) => {
+            // Model meminta menampilkan dokumen / nilai di layar
+            if (message.toolCall?.functionCalls?.length) {
+              handleToolCalls(message.toolCall.functionCalls);
+            }
+
             const content = message.serverContent;
             if (!content) return;
 
@@ -388,7 +455,7 @@ export function useLibraVoice({
       // Cleanup on error
       cleanupResources();
     }
-  }, [role, classLevel, enqueueAudio, stopPlayback, flashWake, t]);
+  }, [role, classLevel, enqueueAudio, stopPlayback, flashWake, handleToolCalls, t]);
 
   /**
    * Cleanup all audio resources
@@ -455,7 +522,25 @@ export function useLibraVoice({
     setUserTranscript("");
     setAiTranscript("");
     setWakeDetected(false);
+    setPanel(null);
   }, [cleanupResources]);
+
+  const closePanel = useCallback(() => setPanel(null), []);
+
+  const sendText = useCallback((text: string) => {
+    const session = sessionRef.current;
+    if (!session || !text.trim()) return;
+    stopPlayback();
+    turnDoneRef.current = false;
+    userTranscriptRef.current = text;
+    setUserTranscript(text);
+    setAiTranscript("");
+    session.sendClientContent({ turns: [{ role: "user", parts: [{ text }] }], turnComplete: true });
+  }, [stopPlayback]);
+
+  const openFile = useCallback((id: string | null) => {
+    setPanel((prev) => (prev?.type === "documents" ? { ...prev, openId: id } : prev));
+  }, []);
 
   /**
    * Toggle mute state for the microphone
@@ -504,5 +589,9 @@ export function useLibraVoice({
     aiTranscript,
     wakeDetected,
     getLevel,
+    panel,
+    closePanel,
+    openFile,
+    sendText,
   };
 }

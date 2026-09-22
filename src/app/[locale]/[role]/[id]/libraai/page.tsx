@@ -59,6 +59,9 @@ function DefaultLibraAI() {
           userTranscript={voice.userTranscript}
           aiTranscript={voice.aiTranscript}
           wakeDetected={voice.wakeDetected}
+          panel={voice.panel}
+          onClosePanel={voice.closePanel}
+          onOpenFile={voice.openFile}
           variant="default"
         />
       </AiChat>

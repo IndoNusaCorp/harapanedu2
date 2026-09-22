@@ -235,6 +235,7 @@ async function buildTeacherData(user: AiUser): Promise<AiData> {
       nilai: g.score,
       huruf: g.grade_letter,
       feedback: g.feedback,
+      tanggal: g.created_at?.slice(0, 10),
     })),
     daftar_siswa: students.slice(0, MAX_ROWS * 2).map(u => ({ nama: fullName(u), kelas: u.class ?? null })),
     absensi_per_kelas: classes.map(c => ({

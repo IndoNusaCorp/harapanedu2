@@ -26,6 +26,8 @@ const WAKE_WORD_STORAGE_KEY = "libra.wakeWordEnabled";
 const WAKE_WORD_PAGES = ["", "/my-work", "/my-classes", "/assignment", "/calendar", "/libraai", "/meetings"];
 // Sesi dari "Hey Libra" ditutup otomatis setelah hening sekian lama, lalu kembali menunggu panggilan
 const WAKE_SESSION_IDLE_MS = 20_000;
+// Saat dokumen / nilai sedang ditampilkan, user butuh waktu membaca
+const WAKE_SESSION_PANEL_IDLE_MS = 120_000;
 
 function isWakeWordPage(pathname: string, basePath: string): boolean {
   const index = pathname.indexOf(basePath);
@@ -85,11 +87,11 @@ export function LibraVoiceProvider({ basePath, children }: { basePath: string; c
   useEffect(() => {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     if (source !== "wake" || status !== "listening") return;
-    idleTimerRef.current = setTimeout(stopVoiceChat, WAKE_SESSION_IDLE_MS);
+    idleTimerRef.current = setTimeout(stopVoiceChat, voice.panel ? WAKE_SESSION_PANEL_IDLE_MS : WAKE_SESSION_IDLE_MS);
     return () => {
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     };
-  }, [source, status, voice.userTranscript, voice.aiTranscript, stopVoiceChat]);
+  }, [source, status, voice.userTranscript, voice.aiTranscript, voice.panel, stopVoiceChat]);
 
   const value: LibraVoiceContextValue = {
     ...voice,
@@ -113,6 +115,11 @@ export function LibraVoiceProvider({ basePath, children }: { basePath: string; c
           wakeDetected={voice.wakeDetected}
           getLevel={voice.getLevel}
           onStop={voice.stopVoiceChat}
+          panel={voice.panel}
+          onClosePanel={voice.closePanel}
+          onOpenFile={voice.openFile}
+          onSuggest={voice.sendText}
+          isTeacher={role === "teacher"}
           variant={isKidsMode ? "kids" : "default"}
         />
       )}
