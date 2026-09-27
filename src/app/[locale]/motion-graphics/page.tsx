@@ -32,7 +32,7 @@ export default function MotionGraphicsPage() {
     frame=requestAnimationFrame(tick);return()=>cancelAnimationFrame(frame);
   },[playing]);
   useEffect(() => {
-    if (!playing && !exporting) audio.current?.pause();
+    if (!playing && !exporting) audio.current?.pause(); 
   }, [playing, exporting]);
   useEffect(() => {
     if (audioGraph.current) audioGraph.current.gain.gain.value = muted ? 0 : volume;
